@@ -24,7 +24,6 @@ from fairseq.models.wav2vec import (
     Wav2VecEncoder,
     Wav2Vec2Config,
     Wav2Vec2AsrConfig,
-    Wav2Vec2Model,
 )
 from fairseq.models.wav2vec.wav2vec2 import MASKING_DISTRIBUTION_CHOICES
 from fairseq.models.hubert import (
@@ -36,7 +35,6 @@ from fairseq.models.transformer import (
     TransformerModelBase,
     TransformerDecoder,
 )
-from fairseq.modules.layer_norm import LayerNorm
 from fairseq.modules.adapter import ScaledParallelAdapter
 from fairseq.models.speech_to_text import Conv1dSubsampler
 from fairseq.tasks import FairseqTask
@@ -206,12 +204,6 @@ class S2TPretrainedEncoderConfig(S2TPretrainedComponentConfig):
         default=None,
         metadata={"help": "apply adapters to each layer"}
     )
-    intermediate_connection: bool = field(
-        default=False,
-        metadata={
-            "help": "intermediate connection between inter-encoder outputs and decoder",
-        },
-    )
 
 
 @dataclass
@@ -251,7 +243,7 @@ class S2TPretrainedModel(FairseqEncoderDecoderModel):
         encoder = S2TPretrainedComponent.build(cfg.encoder)
         decoder = S2TPretrainedComponent.build(cfg.decoder, task.target_dictionary)
         return cls(encoder, decoder)
-        
+
 
 class S2TPretrainedComponent:
     """ Base class for pretrained S2T encoders and decoders. """
@@ -289,7 +281,6 @@ class S2TPretrainedComponent:
             component = S2TPretrainedEncoder.get_class(cfg).build(cfg)
             if safe_hasattr(cfg, "length_adaptor") and not safe_hasattr(component, "length_adaptor"):
                 component.add_length_adaptor(cfg.length_adaptor)
-            component.add_inter_module()
         elif component_type == 'decoder':
             component = S2TPretrainedDecoder.get_class(cfg).build(cfg, dictionary)
         else:
@@ -352,8 +343,6 @@ class S2TPretrainedEncoder(FairseqEncoder, S2TPretrainedComponent):
         S2TPretrainedComponent.__init__(self, cfg)
         
         self.embed_dim = cfg["pre_args"]["model"]["w2v_args"]["model"].encoder_embed_dim
-        self.num_layers = cfg["pre_args"]["model"]["w2v_args"]["model"].encoder_layers
-        self.intermediate_connection = cfg.intermediate_connection
 
     @classmethod
     def get_class(cls, cfg: S2TPretrainedEncoderConfig) -> Type['S2TPretrainedEncoder']:
@@ -381,19 +370,6 @@ class S2TPretrainedEncoder(FairseqEncoder, S2TPretrainedComponent):
             out_channels=cfg.out_channels,
             kernel_sizes=cfg.kernel_sizes,
         )
-    
-    def add_inter_module(self):
-        # compoments for inter-forward
-        if self.intermediate_connection:
-            logger.info("aggregation layer is created")
-            self.aggregation_layer = nn.Conv2d(
-                in_channels=self.num_layers,
-                out_channels=1,
-                kernel_size=(1, 1),
-            )
-            self.layer_norm = LayerNorm(
-                normalized_shape=self.embed_dim,
-            )
 
     def pre_forward(self, src_tokens, src_lengths, **kwargs):
         return {
@@ -404,46 +380,8 @@ class S2TPretrainedEncoder(FairseqEncoder, S2TPretrainedComponent):
 
     def forward(self, src_tokens, src_lengths, **kwargs):
         encoder_inputs = self.pre_forward(src_tokens, src_lengths, **kwargs)
-        encoder_inputs["layer_results"] = self.intermediate_connection
         encoder_out = self.ORIGINAL_MODEL_CLS.forward(self, **encoder_inputs)
-        if self.intermediate_connection:
-            encoder_out = self.inter_forward(encoder_out)
         return self.post_forward(encoder_out)
-
-    def inter_forward(self, encoder_out:dict) -> dict:
-        """
-        The forward function for intermediate connection between encoder and decoder.
-        `encoder_out` must have the key, `layer_results` including inter-outputs from transformer encoders.
-        """
-        assert "layer_results" in encoder_out.keys(), f"""
-        pre-trained encoder output must have `layer_results`
-        encoder_out has {encoder_out.keys()}
-        """
-            
-        # list(tuple(x[T, B, D], attention, before_normalization))
-        layer_results = encoder_out["layer_results"]
-        layer_results_extracted = []
-        for result in layer_results:
-            # extract 'x' only
-            # transpose [T, B, D] to [B, T, D]
-            layer_results_extracted.append(result[0].transpose(0, 1))
-            
-        # list([B, T, D]) to [B, L, T, D]
-        layer_results = torch.stack(layer_results_extracted, dim=1)
-        # aggregate [B, L, T, D] to [B, 1, T, D]
-        aggregated_encoder_out = self.aggregation_layer(layer_results)
-        # squeeze [B, 1, T, D] to [B, T, D]
-        aggregated_encoder_out = aggregated_encoder_out.squeeze(1)
-        # transpose [B, T, D] to [T, B, D]
-        aggregated_encoder_out = aggregated_encoder_out.transpose(0, 1)
-        
-        aggregated_encoder_out = self.layer_norm(aggregated_encoder_out)
-        aggregated_encoder_out = {
-            "encoder_out": aggregated_encoder_out,
-            "padding_mask": encoder_out["padding_mask"],
-        }
-        
-        return aggregated_encoder_out
 
     def post_forward(self, encoder_out):
         if safe_hasattr(self, "length_adaptor"):
