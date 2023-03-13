@@ -464,19 +464,14 @@ class HubertModel(BaseFairseqModel):
         # x: (B, T, D), float
         # padding_mask: (B, T), bool
         # mask_indices: (B, T), bool
-        x, layer_results = self.encoder(
+        x, _ = self.encoder(
             x,
             padding_mask=padding_mask,
             layer=None if output_layer is None else output_layer - 1,
         )
 
         if features_only:
-            return {
-                "x": x,
-                "padding_mask": padding_mask,
-                "features": features,
-                "layer_results": layer_results,
-            }
+            return {"x": x, "padding_mask": padding_mask, "features": features}
 
         def compute_pred(proj_x, target, label_embs):
             # compute logits for the i-th label set
@@ -536,7 +531,6 @@ class HubertModel(BaseFairseqModel):
         mask: bool = False,
         ret_conv: bool = False,
         output_layer: Optional[int] = None,
-        layer_results: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         res = self.forward(
             source,
@@ -546,11 +540,7 @@ class HubertModel(BaseFairseqModel):
             output_layer=output_layer,
         )
         feature = res["features"] if ret_conv else res["x"]
-        
-        if layer_results:
-            return feature, res["padding_mask"], res["layer_results"]
-        else:
-            return feature, res["padding_mask"]
+        return feature, res["padding_mask"]
 
     def get_logits(self, net_output, is_masked=True):
         if is_masked:

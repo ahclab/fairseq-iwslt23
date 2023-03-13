@@ -302,22 +302,18 @@ class HubertEncoder(FairseqEncoder):
         super().set_num_updates(num_updates)
         self.num_updates = num_updates
 
-    def forward(self, source, padding_mask, tbc=True, layer_results:bool=False, **kwargs):
+    def forward(self, source, padding_mask, tbc=True, **kwargs):
 
         w2v_args = {
             "source": source,
             "padding_mask": padding_mask,
             "mask": self.apply_mask and self.training,
-            "layer_results": layer_results,
         }
 
         ft = self.freeze_finetune_updates <= self.num_updates
 
         with torch.no_grad() if not ft else contextlib.ExitStack():
-            if layer_results:
-                x, padding_mask, layer_results = self.w2v_model.extract_features(**w2v_args)
-            else:
-                x, padding_mask = self.w2v_model.extract_features(**w2v_args)
+            x, padding_mask = self.w2v_model.extract_features(**w2v_args)
 
             if tbc:
                 # B x T x C -> T x B x C
@@ -327,17 +323,12 @@ class HubertEncoder(FairseqEncoder):
 
         if self.proj:
             x = self.proj(x)
-            
-        output = {
+
+        return {
             "encoder_out": x,  # T x B x C
             "encoder_padding_mask": padding_mask,  # B x T
             "padding_mask": padding_mask,
         }
-        
-        if layer_results:
-            output["layer_results"] = layer_results
-
-        return output
 
     def reorder_encoder_out(self, encoder_out, new_order):
         if encoder_out["encoder_out"] is not None:
