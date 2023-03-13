@@ -96,6 +96,14 @@ class S2TLengthAdaptorConfig(FairseqDataclass):
 
 
 @dataclass
+class S2TInterConnectionConfig(FairseqDataclass):
+    dropout: float = field(
+        default=0.0,
+        metadata={"help": "dropout rate of inter-connection"}
+    )
+
+
+@dataclass
 class W2VTimeChannelMaskingConfig(FairseqDataclass):
     length: int = field(
         default=10, metadata={"help": "length of the mask"}
@@ -206,10 +214,10 @@ class S2TPretrainedEncoderConfig(S2TPretrainedComponentConfig):
         default=None,
         metadata={"help": "apply adapters to each layer"}
     )
-    intermediate_connection: bool = field(
-        default=False,
+    inter_connection: Optional[S2TInterConnectionConfig] = field(
+        default=None,
         metadata={
-            "help": "intermediate connection between inter-encoder outputs and decoder",
+            "help": "inter-connection between inter-encoder outputs and decoder",
         },
     )
 
@@ -289,7 +297,8 @@ class S2TPretrainedComponent:
             component = S2TPretrainedEncoder.get_class(cfg).build(cfg)
             if safe_hasattr(cfg, "length_adaptor") and not safe_hasattr(component, "length_adaptor"):
                 component.add_length_adaptor(cfg.length_adaptor)
-            component.add_inter_module()
+            if safe_hasattr(cfg, "inter_connection"):
+                component.add_inter_module(cfg.inter_connection)
         elif component_type == 'decoder':
             component = S2TPretrainedDecoder.get_class(cfg).build(cfg, dictionary)
         else:
@@ -353,7 +362,6 @@ class S2TPretrainedEncoder(FairseqEncoder, S2TPretrainedComponent):
         
         self.embed_dim = cfg["pre_args"]["model"]["w2v_args"]["model"].encoder_embed_dim
         self.num_layers = cfg["pre_args"]["model"]["w2v_args"]["model"].encoder_layers
-        self.intermediate_connection = cfg.intermediate_connection
 
     @classmethod
     def get_class(cls, cfg: S2TPretrainedEncoderConfig) -> Type['S2TPretrainedEncoder']:
@@ -382,18 +390,18 @@ class S2TPretrainedEncoder(FairseqEncoder, S2TPretrainedComponent):
             kernel_sizes=cfg.kernel_sizes,
         )
     
-    def add_inter_module(self):
+    def add_inter_module(self, cfg: S2TInterConnectionConfig):
         # compoments for inter-forward
-        if self.intermediate_connection:
-            logger.info("aggregation layer is created")
-            self.aggregation_layer = nn.Conv2d(
-                in_channels=self.num_layers,
-                out_channels=1,
-                kernel_size=(1, 1),
-            )
-            self.layer_norm = LayerNorm(
-                normalized_shape=self.embed_dim,
-            )
+        logger.info("aggregation layer is created")
+        self.aggregation_layer = nn.Conv2d(
+            in_channels=self.num_layers,
+            out_channels=1,
+            kernel_size=(1, 1),
+        )
+        self.layer_norm = LayerNorm(
+            normalized_shape=self.embed_dim,
+        )
+        self.layer_dropout = nn.Dropout2d(p=cfg.dropout)
 
     def pre_forward(self, src_tokens, src_lengths, **kwargs):
         return {
@@ -404,15 +412,15 @@ class S2TPretrainedEncoder(FairseqEncoder, S2TPretrainedComponent):
 
     def forward(self, src_tokens, src_lengths, **kwargs):
         encoder_inputs = self.pre_forward(src_tokens, src_lengths, **kwargs)
-        encoder_inputs["layer_results"] = self.intermediate_connection
+        encoder_inputs["layer_results"] = safe_hasattr(self, "inter_connection")
         encoder_out = self.ORIGINAL_MODEL_CLS.forward(self, **encoder_inputs)
-        if self.intermediate_connection:
+        if safe_hasattr(self, "inter_connection"):
             encoder_out = self.inter_forward(encoder_out)
         return self.post_forward(encoder_out)
 
     def inter_forward(self, encoder_out:dict) -> dict:
         """
-        The forward function for intermediate connection between encoder and decoder.
+        The forward function for inter-connection between encoder and decoder.
         `encoder_out` must have the key, `layer_results` including inter-outputs from transformer encoders.
         """
         assert "layer_results" in encoder_out.keys(), f"""
