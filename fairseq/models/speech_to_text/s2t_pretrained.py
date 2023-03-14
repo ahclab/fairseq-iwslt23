@@ -438,6 +438,7 @@ class S2TPretrainedEncoder(FairseqEncoder, S2TPretrainedComponent):
             
         # list([B, T, D]) to [B, L, T, D]
         layer_results = torch.stack(layer_results_extracted, dim=1)
+        layer_results = self.layer_dropout(layer_results)
         # aggregate [B, L, T, D] to [B, 1, T, D]
         aggregated_encoder_out = self.aggregation_layer(layer_results)
         # squeeze [B, 1, T, D] to [B, T, D]
