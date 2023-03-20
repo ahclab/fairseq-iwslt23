@@ -256,6 +256,7 @@ class SpeechToTextDataset(FairseqDataset):
             need_waveform=self.cfg.use_audio_input,
             use_sample_rate=self.cfg.use_sample_rate,
         )
+        source = source[:self.n_frames[index]]
         if self.cfg.use_audio_input:
             source = torch.from_numpy(source).float()
             if self.cfg.standardize_audio:
