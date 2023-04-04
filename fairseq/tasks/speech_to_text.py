@@ -325,9 +325,9 @@ class SpeechToTextTask(FairseqTask):
         seq_gen_cls=None,
         extra_gen_cls_kwargs=None,
     ):
-        if self.data_cfg.prepend_tgt_lang_tag and cfg.prefix_size != 1:
+        if self.data_cfg.prepend_tgt_lang_tag and cfg.prefix_size < 1:
             raise ValueError(
-                'Please set "generation.prefix_size=1" since '
+                'Please set "generation.prefix_size>=1" since '
                 "target language ID token is prepended as BOS."
             )
         lang_token_ids = {

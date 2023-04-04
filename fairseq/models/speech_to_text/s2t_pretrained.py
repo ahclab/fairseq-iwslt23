@@ -232,6 +232,10 @@ class S2TPretrainedDecoderConfig(S2TPretrainedComponentConfig):
         default=None,
         metadata={"help": "apply adapters to each layer"}
     )
+    training_prefix_size: int = field(
+        default=1,
+        metadata={"help": "prefix size for causal masking."}
+    )
 
 
 
@@ -683,6 +687,9 @@ class PretrainedBartDecoder(S2TPretrainedDecoder, TransformerDecoder):
         S2TPretrainedDecoder.__init__(self, cfg, tgt_dict)
         TransformerDecoder.__init__(self, cfg.pre_args.model, tgt_dict, embed_tokens)
 
+        if safe_hasattr(cfg, 'training_prefix_size'):
+            self.training_prefix_size = cfg.training_prefix_size
+
     @classmethod
     def update_pre_args(cls, cfg: S2TPretrainedComponentConfig) -> None:
         super().update_pre_args(cfg)
@@ -719,3 +726,21 @@ class PretrainedBartDecoder(S2TPretrainedDecoder, TransformerDecoder):
                 new_state_dict["embed_tokens.weight"]
 
         return S2TPretrainedDecoder.load_state_dict(self, new_state_dict, strict=strict)
+
+    def buffered_future_mask(self, tensor):
+
+        from fairseq import utils
+        dim = tensor.size(0)
+        # self._future_mask.device != tensor.device is not working in TorchScript. This is a workaround.
+        if (
+            self._future_mask.size(0) == 0
+            or (not self._future_mask.device == tensor.device)
+            or self._future_mask.size(0) < dim
+        ):
+            self._future_mask = torch.triu(
+                utils.fill_with_neg_inf(torch.zeros([dim, dim])), 1
+            )
+        if safe_hasattr(self, 'training_prefix_size'):
+            self._future_mask[:, :self.training_prefix_size] = 0
+        self._future_mask = self._future_mask.to(tensor)
+        return self._future_mask[:dim, :dim]
