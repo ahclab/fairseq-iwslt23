@@ -18,7 +18,7 @@ from fairseq.data.audio.speech_to_text_dataset import (
     SpeechToTextDatasetCreator,
     get_features_or_waveform,
 )
-from fairseq.data.audio.speech_augmentation_dataset import SpeechAugmentationDataset
+#TMP from fairseq.data.audio.speech_augmentation_dataset import SpeechAugmentationDataset
 from fairseq.data.audio.speech_distillation_dataset import SpeechDistillationDataset
 
 from fairseq.dataclass import FairseqDataclass
