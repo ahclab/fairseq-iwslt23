@@ -10,7 +10,8 @@ from omegaconf import II, MISSING
 from dataclasses import dataclass, field
 from typing import Optional
 
-from fairseq import utils, metrics, scoring
+from fairseq import utils, scoring
+from fairseq.logging import metrics
 from fairseq.data import Dictionary, encoders
 from fairseq.data.audio.speech_to_text_dataset import (
     S2TDataConfig,
@@ -18,7 +19,7 @@ from fairseq.data.audio.speech_to_text_dataset import (
     SpeechToTextDatasetCreator,
     get_features_or_waveform,
 )
-#TMP from fairseq.data.audio.speech_augmentation_dataset import SpeechAugmentationDataset
+from fairseq.data.audio.speech_augmentation_dataset import SpeechAugmentationDataset
 from fairseq.data.audio.speech_distillation_dataset import SpeechDistillationDataset
 
 from fairseq.dataclass import FairseqDataclass
