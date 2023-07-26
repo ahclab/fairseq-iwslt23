@@ -8,9 +8,10 @@ import argparse
 import logging
 from pathlib import Path
 import soundfile as sf
-from examples.speech_to_text.prep_mustc_data import (
-    MUSTC
-)
+#from examples.speech_to_text.prep_mustc_data import (
+#    MUSTC
+#)
+from prep_mustc_data import MUSTC
 
 from tqdm import tqdm
 

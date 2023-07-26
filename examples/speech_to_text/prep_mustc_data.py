@@ -16,7 +16,8 @@ from typing import Tuple
 import numpy as np
 import pandas as pd
 import soundfile as sf
-from examples.speech_to_text.data_utils import (
+#from examples.speech_to_text.data_utils import (
+from data_utils import (
     create_zip,
     extract_fbank_features,
     filter_manifest_df,
@@ -48,7 +49,7 @@ class MUSTC(Dataset):
     """
 
     SPLITS = ["train", "dev", "tst-COMMON", "tst-HE"]
-    LANGUAGES = ["de", "es", "fr", "it", "nl", "pt", "ro", "ru"]
+    LANGUAGES = ["de", "es", "fr", "it", "nl", "pt", "ro", "ru", "ja", "zh"]
 
     def __init__(self, root: str, lang: str, split: str) -> None:
         assert split in self.SPLITS and lang in self.LANGUAGES
@@ -74,7 +75,7 @@ class MUSTC(Dataset):
         for wav_filename, _seg_group in groupby(segments, lambda x: x["wav"]):
             wav_path = wav_root / wav_filename
             sample_rate = sf.info(wav_path.as_posix()).samplerate
-            seg_group = sorted(_seg_group, key=lambda x: x["offset"])
+            seg_group = sorted(_seg_group, key=lambda x: float(x["offset"]))
             for i, segment in enumerate(seg_group):
                 offset = int(float(segment["offset"]) * sample_rate)
                 n_frames = int(float(segment["duration"]) * sample_rate)
